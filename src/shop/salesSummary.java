@@ -29,29 +29,39 @@ import software.amazon.awssdk.services.sqs.model.Message;
 import software.amazon.awssdk.services.sqs.model.ReceiveMessageRequest;
 
 public class salesSummary {
-	public static void main(String[] args) {
-			Region region = Region.US_EAST_1;
-			String queueURL = "https://sqs.us-east-1.amazonaws.com/057004900367/salesAppQueue";
-			S3Client s3 = S3Client.builder().region(region).build();
-			SqsClient sqsClient = SqsClient.builder().region(region).build();
+	public static void main(String[] args) throws InterruptedException {
+		System.out.println("App started");
+		Region region = Region.US_EAST_1;
+		String queueURL = "https://sqs.us-east-1.amazonaws.com/057004900367/salesAppQueue";
+		S3Client s3 = S3Client.builder().region(region).build();
+		SqsClient sqsClient = SqsClient.builder().region(region).build();
+		while (true) {
 			while (true) {
-			Message message = ReceiveMessages(queueURL, sqsClient);
-			if(message !=null) {
-			System.out.println(message);
-			String messageString = message.body();
-			String[] data = messageString.split(";");
-			String bucketName = data[0].toString();
-			String fileName = data[1].toString();
-			System.out.println("Message information: Bucket name: " + bucketName + "\nFile name: " + fileName);
-			try {
-				DownloadFile(bucketName, fileName, s3);
-			} catch (IOException e) {
-				e.printStackTrace();
+				Message message = ReceiveMessages(queueURL, sqsClient);
+				if (message != null) {
+					long startTime = System.currentTimeMillis();
+					System.out.println(message);
+					String messageString = message.body();
+					String[] data = messageString.split(";");
+					String bucketName = data[0].toString();
+					String fileName = data[1].toString();
+					System.out.println("Message information: Bucket name: " + bucketName + "\nFile name: " + fileName);
+					try {
+						DownloadFile(bucketName, fileName, s3);
+					} catch (IOException e) {
+						e.printStackTrace();
+					}
+					calculate(s3, bucketName, fileName);
+					deleteMessage(queueURL, message, sqsClient);
+					deleteFile(fileName);
+					long endTime = System.currentTimeMillis();
+					System.out.println("That took " + (endTime - startTime) + " milliseconds");
+				} else {
+					break;
+				}
 			}
-			calculate(s3, bucketName, fileName);
-			deleteMessage(queueURL, message, sqsClient);
-			deleteFile(fileName);
-			}
+			//Pause worker for 5minutes before checking if any new messages arrived.
+			Thread.sleep(300000);
 		}
 	}
 
@@ -106,6 +116,7 @@ public class salesSummary {
 		s3.deleteObject(deleteObjectRequest);
 
 	}
+
 // Upload summary file to bucket
 	public static void uploadBucket(S3Client s3, String bucketName, String fileName) {
 		PutObjectRequest request = PutObjectRequest.builder().bucket(bucketName).key(fileName).build();
@@ -113,6 +124,7 @@ public class salesSummary {
 		System.out.println("FileAdded");
 		deleteFile(fileName);
 	}
+
 // Creates CSV file locally
 	public static boolean writeToCSV(double totalProfit, ArrayList<Product> products, String fileName) {
 
@@ -156,12 +168,14 @@ public class salesSummary {
 		}
 		return true;
 	}
+
 //deletes file from local storage
 	public static void deleteFile(String fileName) {
 		File f = new File(fileName);
 		f.delete();
 		System.out.println("File delete locally");
 	}
+
 // receives messages
 	public static Message ReceiveMessages(String queueUrl, SqsClient sqsClient) {
 
